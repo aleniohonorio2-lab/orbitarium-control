@@ -7,9 +7,11 @@ import {
   ArrowRight,
   Bot,
   CalendarDays,
+  CalendarPlus,
   CheckCircle2,
   CheckSquare,
   Clock3,
+  ExternalLink,
   GripVertical,
   LockKeyhole,
   MessageSquare,
@@ -55,7 +57,13 @@ type Task = {
   ownerType: "Pessoa" | "Agente";
   column: ColumnId;
   priority: "Alta" | "Media" | "Baixa";
+  start: string;
   due: string;
+  scheduleStartTime: string;
+  scheduleEndTime: string;
+  location: string;
+  effort: string;
+  health: "No prazo" | "Atencao" | "Risco";
   notes: string;
   description: string;
   labels: string[];
@@ -124,7 +132,13 @@ const initialTasks: Task[] = [
     ownerType: "Pessoa",
     column: "doing",
     priority: "Alta",
+    start: "2026-09-20",
     due: "2026-09-20",
+    scheduleStartTime: "09:00",
+    scheduleEndTime: "09:45",
+    location: "Google Meet",
+    effort: "2h",
+    health: "Atencao",
     notes: "Consolidar gargalos para decisao da reuniao diaria.",
     description: "Levantar campanhas ativas, metricas por canal e pontos de perda antes do alinhamento comercial.",
     labels: ["Receita", "Diagnostico"],
@@ -146,7 +160,13 @@ const initialTasks: Task[] = [
     ownerType: "Agente",
     column: "review",
     priority: "Alta",
+    start: "2026-09-20",
     due: "2026-09-20",
+    scheduleStartTime: "14:00",
+    scheduleEndTime: "14:30",
+    location: "Google Meet",
+    effort: "1h",
+    health: "No prazo",
     notes: "Checar clareza das etapas e pontos de prova social.",
     description: "Revisar narrativa, exemplos praticos, prova de autoridade e transicoes do treinamento.",
     labels: ["Conteudo", "Compliance"],
@@ -168,7 +188,13 @@ const initialTasks: Task[] = [
     ownerType: "Agente",
     column: "planned",
     priority: "Media",
+    start: "2026-09-20",
     due: "2026-09-21",
+    scheduleStartTime: "10:00",
+    scheduleEndTime: "11:00",
+    location: "Sala agentes",
+    effort: "3h",
+    health: "No prazo",
     notes: "Campos minimos: unidade, projeto, titulo, dono e origem.",
     description: "Criar o formato padrao para qualquer agente registrar tarefas no Mission Control.",
     labels: ["Agentes", "Integracao"],
@@ -190,7 +216,13 @@ const initialTasks: Task[] = [
     ownerType: "Pessoa",
     column: "intake",
     priority: "Media",
+    start: "2026-09-22",
     due: "2026-09-27",
+    scheduleStartTime: "16:00",
+    scheduleEndTime: "16:45",
+    location: "Google Meet",
+    effort: "4h",
+    health: "Atencao",
     notes: "Mostrar limites, bloqueios e tarefas em atraso.",
     description: "Desenhar leitura rapida de capacidade e alertas para evitar gargalos invisiveis.",
     labels: ["Operacao", "Carga"],
@@ -211,7 +243,13 @@ const initialTasks: Task[] = [
     ownerType: "Pessoa",
     column: "done",
     priority: "Baixa",
+    start: "2026-09-18",
     due: "2026-09-19",
+    scheduleStartTime: "11:00",
+    scheduleEndTime: "11:30",
+    location: "Google Meet",
+    effort: "45m",
+    health: "No prazo",
     notes: "Material liberado para revisao assincrona do time.",
     description: "Checklist final para acompanhamento do modulo 2 e padronizacao de entrega.",
     labels: ["Entrega", "Treinamento"],
@@ -238,6 +276,12 @@ const priorityClass = {
   Alta: "border-[#f06f5d] bg-[#fff0ed] text-[#aa3329]",
   Media: "border-[#e5b94d] bg-[#fff8dc] text-[#80600b]",
   Baixa: "border-[#83c5a5] bg-[#ecfff5] text-[#146a46]",
+};
+
+const healthClass = {
+  "No prazo": "bg-[#e9f9f1] text-[#146a46]",
+  Atencao: "bg-[#fff8dc] text-[#80600b]",
+  Risco: "bg-[#fff0ed] text-[#aa3329]",
 };
 
 const makeId = (prefix = "task") => `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
@@ -269,7 +313,7 @@ export default function Home() {
     const projectMatch = selectedProjectId === "all" || task.projectId === selectedProjectId;
     const searchMatch =
       query.trim().length === 0 ||
-      `${task.title} ${task.owner} ${task.notes} ${task.description} ${task.labels.join(" ")}`
+      `${task.title} ${task.owner} ${task.notes} ${task.description} ${task.location} ${task.health} ${task.labels.join(" ")}`
         .toLowerCase()
         .includes(query.toLowerCase());
     return unitMatch && projectMatch && searchMatch;
@@ -318,7 +362,13 @@ export default function Home() {
     updateTask(taskId, { column });
   }
 
-  function addTask(title = newTaskTitle, unitId = newTaskUnit, projectId = newTaskProject, owner = newTaskOwner) {
+  function addTask(
+    title = newTaskTitle,
+    unitId = newTaskUnit,
+    projectId = newTaskProject,
+    owner = newTaskOwner,
+    options: Partial<Task> = {},
+  ) {
     const cleanTitle = title.trim();
     if (!cleanTitle) return null;
     const ownerRecord = initialMembers.find((member) => member.name === owner);
@@ -330,11 +380,17 @@ export default function Home() {
       owner,
       ownerType: ownerRecord?.type ?? "Agente",
       column: "intake",
-      priority: "Media",
-      due: "",
-      notes: "Criado no Orbitarium Control.",
-      description: "Abra este card para detalhar contexto, checklist e data de entrega.",
-      labels: ["Novo"],
+      priority: options.priority ?? "Media",
+      start: options.start ?? "",
+      due: options.due ?? "",
+      scheduleStartTime: options.scheduleStartTime ?? "09:00",
+      scheduleEndTime: options.scheduleEndTime ?? "09:30",
+      location: options.location ?? "Google Meet",
+      effort: options.effort ?? "",
+      health: options.health ?? "No prazo",
+      notes: options.notes ?? "Criado no Orbitarium Control.",
+      description: options.description ?? "Abra este card para detalhar contexto, checklist e data de entrega.",
+      labels: options.labels ?? ["Novo"],
       checklist: [],
       attachments: [],
       activity: [`${owner} recebeu esta tarefa.`],
@@ -455,13 +511,41 @@ export default function Home() {
               unitId: { type: "string" },
               projectId: { type: "string" },
               owner: { type: "string" },
+              start: { type: "string" },
+              due: { type: "string" },
+              scheduleStartTime: { type: "string" },
+              scheduleEndTime: { type: "string" },
+              location: { type: "string" },
+              effort: { type: "string" },
+              health: { enum: ["No prazo", "Atencao", "Risco"] },
+              priority: { enum: ["Alta", "Media", "Baixa"] },
+              description: { type: "string" },
+              notes: { type: "string" },
             },
             required: ["title", "unitId", "projectId", "owner"],
             additionalProperties: false,
           },
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           execute(input) {
-            const payload = input as Partial<Record<"title" | "unitId" | "projectId" | "owner", unknown>>;
+            const payload = input as Partial<
+              Record<
+                | "title"
+                | "unitId"
+                | "projectId"
+                | "owner"
+                | "start"
+                | "due"
+                | "scheduleStartTime"
+                | "scheduleEndTime"
+                | "location"
+                | "effort"
+                | "health"
+                | "priority"
+                | "description"
+                | "notes",
+                unknown
+              >
+            >;
             if (
               typeof payload.title !== "string" ||
               typeof payload.unitId !== "string" ||
@@ -470,7 +554,24 @@ export default function Home() {
             ) {
               throw new Error("Entrada invalida para criar tarefa.");
             }
-            const task = addTask(payload.title, payload.unitId, payload.projectId, payload.owner);
+            const task = addTask(payload.title, payload.unitId, payload.projectId, payload.owner, {
+              start: typeof payload.start === "string" ? payload.start : undefined,
+              due: typeof payload.due === "string" ? payload.due : undefined,
+              scheduleStartTime: typeof payload.scheduleStartTime === "string" ? payload.scheduleStartTime : undefined,
+              scheduleEndTime: typeof payload.scheduleEndTime === "string" ? payload.scheduleEndTime : undefined,
+              location: typeof payload.location === "string" ? payload.location : undefined,
+              effort: typeof payload.effort === "string" ? payload.effort : undefined,
+              health:
+                payload.health === "No prazo" || payload.health === "Atencao" || payload.health === "Risco"
+                  ? payload.health
+                  : undefined,
+              priority:
+                payload.priority === "Alta" || payload.priority === "Media" || payload.priority === "Baixa"
+                  ? payload.priority
+                  : undefined,
+              description: typeof payload.description === "string" ? payload.description : undefined,
+              notes: typeof payload.notes === "string" ? payload.notes : undefined,
+            });
             if (!task) throw new Error("Titulo vazio.");
             return { created: task };
           },
@@ -521,6 +622,12 @@ export default function Home() {
               title: { type: "string" },
               description: { type: "string" },
               due: { type: "string" },
+              start: { type: "string" },
+              scheduleStartTime: { type: "string" },
+              scheduleEndTime: { type: "string" },
+              location: { type: "string" },
+              effort: { type: "string" },
+              health: { enum: ["No prazo", "Atencao", "Risco"] },
               owner: { type: "string" },
               priority: { enum: ["Alta", "Media", "Baixa"] },
               notes: { type: "string" },
@@ -535,7 +642,15 @@ export default function Home() {
             const patch: Partial<Task> = {};
             if (typeof payload.title === "string") patch.title = payload.title;
             if (typeof payload.description === "string") patch.description = payload.description;
+            if (typeof payload.start === "string") patch.start = payload.start;
             if (typeof payload.due === "string") patch.due = payload.due;
+            if (typeof payload.scheduleStartTime === "string") patch.scheduleStartTime = payload.scheduleStartTime;
+            if (typeof payload.scheduleEndTime === "string") patch.scheduleEndTime = payload.scheduleEndTime;
+            if (typeof payload.location === "string") patch.location = payload.location;
+            if (typeof payload.effort === "string") patch.effort = payload.effort;
+            if (payload.health === "No prazo" || payload.health === "Atencao" || payload.health === "Risco") {
+              patch.health = payload.health;
+            }
             if (typeof payload.owner === "string") patch.owner = payload.owner;
             if (payload.priority === "Alta" || payload.priority === "Media" || payload.priority === "Baixa") {
               patch.priority = payload.priority;
@@ -799,12 +914,19 @@ export default function Home() {
                           <p className="mt-2 line-clamp-2 text-sm leading-snug text-[#546671]">{task.notes}</p>
                           <div className="mt-3 flex flex-wrap gap-2 text-xs text-[#5b6b75]">
                             <span className="rounded bg-[#eef3f5] px-2 py-1">{project?.name}</span>
+                            {task.start && (
+                              <span className="inline-flex items-center gap-1 rounded bg-[#eef3f5] px-2 py-1">
+                                Inicio {formatDue(task.start)}
+                              </span>
+                            )}
                             {task.due && (
                               <span className="inline-flex items-center gap-1 rounded bg-[#eef3f5] px-2 py-1">
                                 <CalendarDays className="h-3 w-3" />
-                                {formatDue(task.due)}
+                                Entrega {formatDue(task.due)}
                               </span>
                             )}
+                            <span className={`rounded px-2 py-1 font-bold ${healthClass[task.health]}`}>{task.health}</span>
+                            {task.effort && <span className="rounded bg-[#eef3f5] px-2 py-1">{task.effort}</span>}
                             {task.checklist.length > 0 && (
                               <span className="inline-flex items-center gap-1 rounded bg-[#eef3f5] px-2 py-1">
                                 <CheckSquare className="h-3 w-3" />
@@ -949,6 +1071,7 @@ function TaskDetail({
   const unit = units.find((item) => item.id === task.unitId);
   const project = projects.find((item) => item.id === task.projectId);
   const availableProjects = projects.filter((item) => item.unitId === task.unitId);
+  const calendarUrl = buildGoogleCalendarUrl(task, unit, project);
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#17212b]/55 p-4 backdrop-blur-sm">
@@ -967,6 +1090,7 @@ function TaskDetail({
                 <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${priorityClass[task.priority]}`}>
                   {task.priority}
                 </span>
+                <span className={`rounded px-2 py-1 text-xs font-bold ${healthClass[task.health]}`}>{task.health}</span>
               </div>
               <input
                 value={task.title}
@@ -1125,6 +1249,51 @@ function TaskDetail({
               />
             </FieldLabel>
 
+            <FieldLabel label="Data de inicio">
+              <input
+                type="date"
+                value={task.start}
+                onChange={(event) => onUpdate({ start: event.target.value })}
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+              />
+            </FieldLabel>
+
+            <div className="grid grid-cols-2 gap-2">
+              <FieldLabel label="Inicio agenda">
+                <input
+                  type="time"
+                  value={task.scheduleStartTime}
+                  onChange={(event) => onUpdate({ scheduleStartTime: event.target.value })}
+                  className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+                />
+              </FieldLabel>
+              <FieldLabel label="Fim agenda">
+                <input
+                  type="time"
+                  value={task.scheduleEndTime}
+                  onChange={(event) => onUpdate({ scheduleEndTime: event.target.value })}
+                  className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+                />
+              </FieldLabel>
+            </div>
+
+            <FieldLabel label="Local ou link">
+              <input
+                value={task.location}
+                onChange={(event) => onUpdate({ location: event.target.value })}
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+              />
+            </FieldLabel>
+
+            <FieldLabel label="Esforco">
+              <input
+                value={task.effort}
+                onChange={(event) => onUpdate({ effort: event.target.value })}
+                placeholder="Ex: 2h, 45m"
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+              />
+            </FieldLabel>
+
             <FieldLabel label="Prioridade">
               <select
                 value={task.priority}
@@ -1134,6 +1303,18 @@ function TaskDetail({
                 <option value="Alta">Alta</option>
                 <option value="Media">Media</option>
                 <option value="Baixa">Baixa</option>
+              </select>
+            </FieldLabel>
+
+            <FieldLabel label="Saude">
+              <select
+                value={task.health}
+                onChange={(event) => onUpdate({ health: event.target.value as Task["health"] })}
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+              >
+                <option value="No prazo">No prazo</option>
+                <option value="Atencao">Atencao</option>
+                <option value="Risco">Risco</option>
               </select>
             </FieldLabel>
 
@@ -1151,6 +1332,25 @@ function TaskDetail({
                 className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
               />
             </FieldLabel>
+          </div>
+
+          <div className="mt-6">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-black uppercase tracking-[0.12em] text-[#536670]">
+              <CalendarPlus className="h-4 w-4" />
+              Agendamento
+            </h3>
+            <a
+              href={calendarUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#17212b] px-3 py-2 text-sm font-bold text-white"
+            >
+              Agendar no Google Agenda
+              <ExternalLink className="h-4 w-4" />
+            </a>
+            <p className="mt-2 text-xs leading-relaxed text-[#6b7b85]">
+              Abre o Google Agenda com titulo, datas, horario, local e descricao deste card.
+            </p>
           </div>
 
           <div className="mt-6">
@@ -1221,6 +1421,40 @@ function FieldLabel({ label, children }: { label: string; children: React.ReactN
       {children}
     </label>
   );
+}
+
+function buildGoogleCalendarUrl(task: Task, unit?: Unit, project?: Project) {
+  const startDate = task.start || task.due || new Date().toISOString().slice(0, 10);
+  const endDate = task.due || task.start || startDate;
+  const startTime = task.scheduleStartTime || "09:00";
+  const endTime = task.scheduleEndTime || "09:30";
+  const dates = `${toGoogleCalendarDate(startDate, startTime)}/${toGoogleCalendarDate(endDate, endTime)}`;
+  const details = [
+    task.description,
+    "",
+    `Unidade: ${unit?.name ?? task.unitId}`,
+    `Projeto: ${project?.name ?? task.projectId}`,
+    `Responsavel: ${task.owner}`,
+    `Prioridade: ${task.priority}`,
+    `Saude: ${task.health}`,
+    `Esforco: ${task.effort || "Nao definido"}`,
+    "",
+    `Checklist: ${task.checklist.filter((item) => item.done).length}/${task.checklist.length}`,
+  ].join("\n");
+
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: task.title,
+    dates,
+    details,
+    location: task.location,
+  });
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function toGoogleCalendarDate(date: string, time: string) {
+  return `${date.replaceAll("-", "")}T${time.replace(":", "")}00`;
 }
 
 function formatDue(value: string) {
