@@ -6,14 +6,20 @@ import {
   ArrowLeft,
   ArrowRight,
   Bot,
+  CalendarDays,
   CheckCircle2,
+  CheckSquare,
   Clock3,
+  GripVertical,
   LockKeyhole,
+  MessageSquare,
+  Paperclip,
   Pencil,
   Plus,
   Search,
   Settings,
   Users,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -34,6 +40,12 @@ type Project = {
   signal: string;
 };
 
+type ChecklistItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
 type Task = {
   id: string;
   unitId: string;
@@ -45,6 +57,11 @@ type Task = {
   priority: "Alta" | "Media" | "Baixa";
   due: string;
   notes: string;
+  description: string;
+  labels: string[];
+  checklist: ChecklistItem[];
+  attachments: string[];
+  activity: string[];
   lastUpdate: string;
 };
 
@@ -107,8 +124,17 @@ const initialTasks: Task[] = [
     ownerType: "Pessoa",
     column: "doing",
     priority: "Alta",
-    due: "Hoje",
+    due: "2026-09-20",
     notes: "Consolidar gargalos para decisao da reuniao diaria.",
+    description: "Levantar campanhas ativas, metricas por canal e pontos de perda antes do alinhamento comercial.",
+    labels: ["Receita", "Diagnostico"],
+    checklist: [
+      { id: "chk-101-a", text: "Reunir dados de trafego", done: true },
+      { id: "chk-101-b", text: "Listar gargalos por etapa", done: false },
+      { id: "chk-101-c", text: "Preparar recomendacao", done: false },
+    ],
+    attachments: ["Funil setembro.xlsx"],
+    activity: ["Ana atualizou a prioridade.", "Codex Ops sugeriu consolidar canais pagos e organicos."],
     lastUpdate: "ha 4 min",
   },
   {
@@ -120,8 +146,17 @@ const initialTasks: Task[] = [
     ownerType: "Agente",
     column: "review",
     priority: "Alta",
-    due: "20 set",
+    due: "2026-09-20",
     notes: "Checar clareza das etapas e pontos de prova social.",
+    description: "Revisar narrativa, exemplos praticos, prova de autoridade e transicoes do treinamento.",
+    labels: ["Conteudo", "Compliance"],
+    checklist: [
+      { id: "chk-102-a", text: "Revisar abertura", done: true },
+      { id: "chk-102-b", text: "Checar exemplos de campo", done: true },
+      { id: "chk-102-c", text: "Validar CTA final", done: false },
+    ],
+    attachments: ["Roteiro v3.docx"],
+    activity: ["Codex Conteudo enviou pontos de revisao.", "Maya pediu exemplos mais diretos."],
     lastUpdate: "ha 11 min",
   },
   {
@@ -133,8 +168,17 @@ const initialTasks: Task[] = [
     ownerType: "Agente",
     column: "planned",
     priority: "Media",
-    due: "Amanha",
+    due: "2026-09-21",
     notes: "Campos minimos: unidade, projeto, titulo, dono e origem.",
+    description: "Criar o formato padrao para qualquer agente registrar tarefas no Mission Control.",
+    labels: ["Agentes", "Integracao"],
+    checklist: [
+      { id: "chk-103-a", text: "Definir schema minimo", done: true },
+      { id: "chk-103-b", text: "Mapear permissoes por unidade", done: false },
+      { id: "chk-103-c", text: "Testar criacao por WebMCP", done: false },
+    ],
+    attachments: [],
+    activity: ["Codex Ops criou o primeiro schema.", "Bruno pediu campos de origem e urgencia."],
     lastUpdate: "ha 18 min",
   },
   {
@@ -146,8 +190,16 @@ const initialTasks: Task[] = [
     ownerType: "Pessoa",
     column: "intake",
     priority: "Media",
-    due: "Semana",
+    due: "2026-09-27",
     notes: "Mostrar limites, bloqueios e tarefas em atraso.",
+    description: "Desenhar leitura rapida de capacidade e alertas para evitar gargalos invisiveis.",
+    labels: ["Operacao", "Carga"],
+    checklist: [
+      { id: "chk-104-a", text: "Definir indicadores", done: false },
+      { id: "chk-104-b", text: "Separar humanos e agentes", done: false },
+    ],
+    attachments: [],
+    activity: ["Bruno abriu a solicitacao."],
     lastUpdate: "ha 23 min",
   },
   {
@@ -159,8 +211,17 @@ const initialTasks: Task[] = [
     ownerType: "Pessoa",
     column: "done",
     priority: "Baixa",
-    due: "Ontem",
-    notes: "Material liberado para revisao assíncrona do time.",
+    due: "2026-09-19",
+    notes: "Material liberado para revisao assincrona do time.",
+    description: "Checklist final para acompanhamento do modulo 2 e padronizacao de entrega.",
+    labels: ["Entrega", "Treinamento"],
+    checklist: [
+      { id: "chk-105-a", text: "Revisar texto final", done: true },
+      { id: "chk-105-b", text: "Publicar no drive", done: true },
+      { id: "chk-105-c", text: "Avisar equipe", done: true },
+    ],
+    attachments: ["Checklist modulo 2.pdf"],
+    activity: ["Maya concluiu a publicacao.", "Codex Conteudo marcou como entregue."],
     lastUpdate: "ha 1 h",
   },
 ];
@@ -179,7 +240,7 @@ const priorityClass = {
   Baixa: "border-[#83c5a5] bg-[#ecfff5] text-[#146a46]",
 };
 
-const makeId = () => `task-${Math.random().toString(36).slice(2, 8)}`;
+const makeId = (prefix = "task") => `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 
 export default function Home() {
   const [units, setUnits] = useState(initialUnits);
@@ -193,6 +254,9 @@ export default function Home() {
   const [newTaskUnit, setNewTaskUnit] = useState("scaletec");
   const [newTaskProject, setNewTaskProject] = useState("agent-stack");
   const [newTaskOwner, setNewTaskOwner] = useState("Codex Ops");
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [newChecklistText, setNewChecklistText] = useState("");
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const snapshotRef = useRef({ units, projects, tasks });
 
   useEffect(() => {
@@ -205,10 +269,13 @@ export default function Home() {
     const projectMatch = selectedProjectId === "all" || task.projectId === selectedProjectId;
     const searchMatch =
       query.trim().length === 0 ||
-      `${task.title} ${task.owner} ${task.notes}`.toLowerCase().includes(query.toLowerCase());
+      `${task.title} ${task.owner} ${task.notes} ${task.description} ${task.labels.join(" ")}`
+        .toLowerCase()
+        .includes(query.toLowerCase());
     return unitMatch && projectMatch && searchMatch;
   });
 
+  const selectedTask = selectedTaskId ? tasks.find((task) => task.id === selectedTaskId) ?? null : null;
   const selectedUnit = units.find((unit) => unit.id === selectedUnitId);
   const totalDoing = tasks.filter((task) => task.column === "doing").length;
   const agentTasks = tasks.filter((task) => task.ownerType === "Agente").length;
@@ -225,15 +292,30 @@ export default function Home() {
     }
   }, [availableProjects, newTaskProject]);
 
-  function moveTask(taskId: string, direction: -1 | 1) {
+  function updateTask(taskId: string, patch: Partial<Task>) {
     setTasks((current) =>
-      current.map((task) => {
-        if (task.id !== taskId) return task;
-        const index = columns.findIndex((column) => column.id === task.column);
-        const nextColumn = columns[Math.max(0, Math.min(columns.length - 1, index + direction))].id;
-        return { ...task, column: nextColumn, lastUpdate: "agora" };
-      }),
+      current.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              ...patch,
+              lastUpdate: "agora",
+            }
+          : task,
+      ),
     );
+  }
+
+  function moveTask(taskId: string, direction: -1 | 1) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
+    const index = columns.findIndex((column) => column.id === task.column);
+    const nextColumn = columns[Math.max(0, Math.min(columns.length - 1, index + direction))].id;
+    updateTask(taskId, { column: nextColumn });
+  }
+
+  function moveTaskToColumn(taskId: string, column: ColumnId) {
+    updateTask(taskId, { column });
   }
 
   function addTask(title = newTaskTitle, unitId = newTaskUnit, projectId = newTaskProject, owner = newTaskOwner) {
@@ -249,12 +331,18 @@ export default function Home() {
       ownerType: ownerRecord?.type ?? "Agente",
       column: "intake",
       priority: "Media",
-      due: "Novo",
+      due: "",
       notes: "Criado no Orbitarium Control.",
+      description: "Abra este card para detalhar contexto, checklist e data de entrega.",
+      labels: ["Novo"],
+      checklist: [],
+      attachments: [],
+      activity: [`${owner} recebeu esta tarefa.`],
       lastUpdate: "agora",
     };
     setTasks((current) => [task, ...current]);
     setNewTaskTitle("");
+    setSelectedTaskId(task.id);
     return task;
   }
 
@@ -285,6 +373,37 @@ export default function Home() {
           : unit,
       ),
     );
+  }
+
+  function toggleChecklist(taskId: string, itemId: string) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
+    updateTask(taskId, {
+      checklist: task.checklist.map((item) => (item.id === itemId ? { ...item, done: !item.done } : item)),
+      activity: [`Checklist atualizado.`, ...task.activity],
+    });
+  }
+
+  function addChecklistItem(taskId: string) {
+    const cleanText = newChecklistText.trim();
+    const task = tasks.find((item) => item.id === taskId);
+    if (!cleanText || !task) return;
+    updateTask(taskId, {
+      checklist: [...task.checklist, { id: makeId("chk"), text: cleanText, done: false }],
+      activity: [`Novo item de checklist: ${cleanText}`, ...task.activity],
+    });
+    setNewChecklistText("");
+  }
+
+  function checklistProgress(task: Task) {
+    if (task.checklist.length === 0) return 0;
+    return Math.round((task.checklist.filter((item) => item.done).length / task.checklist.length) * 100);
+  }
+
+  function handleDrop(column: ColumnId) {
+    if (!draggedTaskId) return;
+    moveTaskToColumn(draggedTaskId, column);
+    setDraggedTaskId(null);
   }
 
   useEffect(() => {
@@ -381,13 +500,7 @@ export default function Home() {
             if (typeof payload.taskId !== "string" || !columns.some((column) => column.id === payload.column)) {
               throw new Error("Movimento invalido.");
             }
-            setTasks((current) =>
-              current.map((task) =>
-                task.id === payload.taskId
-                  ? { ...task, column: payload.column as ColumnId, lastUpdate: "agora" }
-                  : task,
-              ),
-            );
+            moveTaskToColumn(payload.taskId, payload.column as ColumnId);
             return { taskId: payload.taskId, column: payload.column };
           },
         },
@@ -395,8 +508,49 @@ export default function Home() {
       ),
     ).catch(() => undefined);
 
+    void Promise.resolve(
+      register(
+        {
+          name: "orbitarium_update_task",
+          title: "Atualizar card",
+          description: "Atualiza campos do card, como descricao, data, prioridade, dono e notas.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              taskId: { type: "string" },
+              title: { type: "string" },
+              description: { type: "string" },
+              due: { type: "string" },
+              owner: { type: "string" },
+              priority: { enum: ["Alta", "Media", "Baixa"] },
+              notes: { type: "string" },
+            },
+            required: ["taskId"],
+            additionalProperties: false,
+          },
+          annotations: { readOnlyHint: false, untrustedContentHint: false },
+          execute(input) {
+            const payload = input as Partial<Task> & { taskId?: unknown };
+            if (typeof payload.taskId !== "string") throw new Error("Card invalido.");
+            const patch: Partial<Task> = {};
+            if (typeof payload.title === "string") patch.title = payload.title;
+            if (typeof payload.description === "string") patch.description = payload.description;
+            if (typeof payload.due === "string") patch.due = payload.due;
+            if (typeof payload.owner === "string") patch.owner = payload.owner;
+            if (payload.priority === "Alta" || payload.priority === "Media" || payload.priority === "Baixa") {
+              patch.priority = payload.priority;
+            }
+            if (typeof payload.notes === "string") patch.notes = payload.notes;
+            updateTask(payload.taskId, patch);
+            return { taskId: payload.taskId, updated: patch };
+          },
+        },
+        { signal: lifecycle.signal },
+      ),
+    ).catch(() => undefined);
+
     return () => lifecycle.abort();
-  }, [availableProjects]);
+  }, [availableProjects, draggedTaskId, newTaskProject, newTaskTitle, newTaskUnit, newTaskOwner, tasks]);
 
   return (
     <main className="min-h-screen bg-[#eef2f4] text-[#17212b]">
@@ -483,7 +637,9 @@ export default function Home() {
                     <Pencil className="h-3.5 w-3.5 text-[#657781]" />
                   </button>
                   <button
-                    onClick={() => setUnits((items) => items.map((item) => (item.id === unit.id ? { ...item, archived: true } : item)))}
+                    onClick={() =>
+                      setUnits((items) => items.map((item) => (item.id === unit.id ? { ...item, archived: true } : item)))
+                    }
                     aria-label={`Arquivar ${unit.name}`}
                     className="p-1"
                   >
@@ -519,7 +675,7 @@ export default function Home() {
                   ))}
               </select>
               <div className="rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm font-semibold">
-                Sync ativo
+                Arraste cards entre colunas
               </div>
             </div>
           </header>
@@ -585,8 +741,16 @@ export default function Home() {
           <div className="grid gap-3 overflow-x-auto pb-3 xl:grid-cols-5">
             {columns.map((column) => {
               const columnTasks = visibleTasks.filter((task) => task.column === column.id);
+              const isDropTarget = Boolean(draggedTaskId);
               return (
-                <section key={column.id} className="min-w-[260px] rounded-lg border border-[#cad6dc] bg-[#f8fafb]">
+                <section
+                  key={column.id}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => handleDrop(column.id)}
+                  className={`min-w-[268px] rounded-lg border bg-[#f8fafb] transition ${
+                    isDropTarget ? "border-[#2f80ed] shadow-[0_0_0_2px_rgba(47,128,237,0.12)]" : "border-[#cad6dc]"
+                  }`}
+                >
                   <div className="border-b border-[#d8e0e4] p-3">
                     <div className="flex items-center justify-between">
                       <h3 className="font-black">{column.label}</h3>
@@ -596,39 +760,76 @@ export default function Home() {
                     </div>
                     <p className="mt-1 text-xs text-[#657781]">{column.hint}</p>
                   </div>
-                  <div className="space-y-3 p-3">
+                  <div className="min-h-[180px] space-y-3 p-3">
                     {columnTasks.map((task) => {
                       const unit = units.find((item) => item.id === task.unitId);
                       const project = projects.find((item) => item.id === task.projectId);
                       const index = columns.findIndex((item) => item.id === task.column);
+                      const doneItems = task.checklist.filter((item) => item.done).length;
                       return (
-                        <article key={task.id} className="rounded-lg border border-[#d7e0e5] bg-white p-3 shadow-sm">
+                        <article
+                          key={task.id}
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData("text/plain", task.id);
+                            setDraggedTaskId(task.id);
+                          }}
+                          onDragEnd={() => setDraggedTaskId(null)}
+                          onClick={() => setSelectedTaskId(task.id)}
+                          className={`rounded-lg border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-[#9bb7c8] hover:shadow-md ${
+                            draggedTaskId === task.id ? "border-[#2f80ed] opacity-60" : "border-[#d7e0e5]"
+                          }`}
+                        >
                           <div className="mb-3 flex items-center justify-between gap-2">
-                            <span
-                              className="rounded-md px-2 py-1 text-[11px] font-black text-white"
-                              style={{ backgroundColor: unit?.color ?? "#60717c" }}
-                            >
-                              {unit?.icon ?? "UN"}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <GripVertical className="h-4 w-4 text-[#8a9aa3]" />
+                              <span
+                                className="rounded-md px-2 py-1 text-[11px] font-black text-white"
+                                style={{ backgroundColor: unit?.color ?? "#60717c" }}
+                              >
+                                {unit?.icon ?? "UN"}
+                              </span>
+                            </div>
                             <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${priorityClass[task.priority]}`}>
                               {task.priority}
                             </span>
                           </div>
                           <h4 className="text-[15px] font-black leading-snug">{task.title}</h4>
-                          <p className="mt-2 text-sm leading-snug text-[#546671]">{task.notes}</p>
+                          <p className="mt-2 line-clamp-2 text-sm leading-snug text-[#546671]">{task.notes}</p>
                           <div className="mt-3 flex flex-wrap gap-2 text-xs text-[#5b6b75]">
                             <span className="rounded bg-[#eef3f5] px-2 py-1">{project?.name}</span>
-                            <span className="rounded bg-[#eef3f5] px-2 py-1">{task.due}</span>
+                            {task.due && (
+                              <span className="inline-flex items-center gap-1 rounded bg-[#eef3f5] px-2 py-1">
+                                <CalendarDays className="h-3 w-3" />
+                                {formatDue(task.due)}
+                              </span>
+                            )}
+                            {task.checklist.length > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded bg-[#eef3f5] px-2 py-1">
+                                <CheckSquare className="h-3 w-3" />
+                                {doneItems}/{task.checklist.length}
+                              </span>
+                            )}
+                            {task.attachments.length > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded bg-[#eef3f5] px-2 py-1">
+                                <Paperclip className="h-3 w-3" />
+                                {task.attachments.length}
+                              </span>
+                            )}
                           </div>
                           <div className="mt-4 flex items-center justify-between border-t border-[#edf1f3] pt-3">
-                            <div className="flex items-center gap-2 text-xs font-semibold text-[#42515a]">
+                            <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[#42515a]">
                               {task.ownerType === "Agente" ? <Bot className="h-4 w-4" /> : <Users className="h-4 w-4" />}
-                              {task.owner}
+                              <span className="truncate">{task.owner}</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <button
                                 disabled={index === 0}
-                                onClick={() => moveTask(task.id, -1)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  moveTask(task.id, -1);
+                                }}
                                 aria-label={`Mover ${task.title} para a esquerda`}
                                 className="grid h-7 w-7 place-items-center rounded-md border border-[#d6e0e5] disabled:opacity-35"
                               >
@@ -636,7 +837,10 @@ export default function Home() {
                               </button>
                               <button
                                 disabled={index === columns.length - 1}
-                                onClick={() => moveTask(task.id, 1)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  moveTask(task.id, 1);
+                                }}
                                 aria-label={`Mover ${task.title} para a direita`}
                                 className="grid h-7 w-7 place-items-center rounded-md border border-[#d6e0e5] disabled:opacity-35"
                               >
@@ -650,7 +854,7 @@ export default function Home() {
                     })}
                     {columnTasks.length === 0 && (
                       <div className="rounded-lg border border-dashed border-[#cfdade] p-4 text-sm text-[#73838c]">
-                        Sem tarefas nesta coluna.
+                        Solte um card aqui.
                       </div>
                     )}
                   </div>
@@ -689,17 +893,297 @@ export default function Home() {
           <PanelTitle icon={<Bot className="h-4 w-4" />} title="Canal Codex nativo" />
           <div className="rounded-lg border border-[#d8e0e4] bg-white p-4">
             <p className="text-sm leading-relaxed text-[#4f6069]">
-              Agentes podem ler o quadro, criar tarefas e mover cards pelas ferramentas WebMCP registradas nesta pagina.
+              Agentes podem ler o quadro, criar tarefas, mover cards e atualizar detalhes por ferramentas WebMCP.
             </p>
             <div className="mt-4 space-y-2 font-mono text-xs text-[#24313a]">
               <code className="block rounded bg-[#eef3f5] p-2">orbitarium_read_board</code>
               <code className="block rounded bg-[#eef3f5] p-2">orbitarium_create_task</code>
               <code className="block rounded bg-[#eef3f5] p-2">orbitarium_move_task</code>
+              <code className="block rounded bg-[#eef3f5] p-2">orbitarium_update_task</code>
             </div>
           </div>
         </aside>
       </div>
+
+      {selectedTask && (
+        <TaskDetail
+          task={selectedTask}
+          units={units}
+          projects={projects}
+          newChecklistText={newChecklistText}
+          setNewChecklistText={setNewChecklistText}
+          onClose={() => setSelectedTaskId(null)}
+          onUpdate={(patch) => updateTask(selectedTask.id, patch)}
+          onToggleChecklist={(itemId) => toggleChecklist(selectedTask.id, itemId)}
+          onAddChecklist={() => addChecklistItem(selectedTask.id)}
+          checklistProgress={checklistProgress(selectedTask)}
+        />
+      )}
     </main>
+  );
+}
+
+function TaskDetail({
+  task,
+  units,
+  projects,
+  newChecklistText,
+  setNewChecklistText,
+  onClose,
+  onUpdate,
+  onToggleChecklist,
+  onAddChecklist,
+  checklistProgress,
+}: {
+  task: Task;
+  units: Unit[];
+  projects: Project[];
+  newChecklistText: string;
+  setNewChecklistText: (value: string) => void;
+  onClose: () => void;
+  onUpdate: (patch: Partial<Task>) => void;
+  onToggleChecklist: (itemId: string) => void;
+  onAddChecklist: () => void;
+  checklistProgress: number;
+}) {
+  const unit = units.find((item) => item.id === task.unitId);
+  const project = projects.find((item) => item.id === task.projectId);
+  const availableProjects = projects.filter((item) => item.unitId === task.unitId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#17212b]/55 p-4 backdrop-blur-sm">
+      <section className="my-6 grid w-full max-w-5xl grid-cols-[minmax(0,1fr)_280px] overflow-hidden rounded-lg bg-[#f8fafb] shadow-2xl max-lg:grid-cols-1">
+        <div className="p-5 sm:p-6">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span
+                  className="rounded-md px-2 py-1 text-[11px] font-black text-white"
+                  style={{ backgroundColor: unit?.color ?? "#60717c" }}
+                >
+                  {unit?.icon ?? "UN"}
+                </span>
+                <span className="rounded bg-[#e9f1f4] px-2 py-1 text-xs font-bold text-[#52636d]">{project?.name}</span>
+                <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${priorityClass[task.priority]}`}>
+                  {task.priority}
+                </span>
+              </div>
+              <input
+                value={task.title}
+                onChange={(event) => onUpdate({ title: event.target.value })}
+                className="w-full rounded-md border border-transparent bg-transparent px-1 text-2xl font-black leading-tight outline-none focus:border-[#ccd7dd] focus:bg-white"
+              />
+            </div>
+            <button onClick={onClose} aria-label="Fechar card" className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="grid gap-5">
+            <section>
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-black uppercase tracking-[0.12em] text-[#536670]">
+                <MessageSquare className="h-4 w-4" />
+                Descricao
+              </h3>
+              <textarea
+                value={task.description}
+                onChange={(event) => onUpdate({ description: event.target.value })}
+                rows={5}
+                className="w-full resize-none rounded-lg border border-[#ccd7dd] bg-white p-3 text-sm leading-relaxed outline-none focus:border-[#2f80ed]"
+              />
+            </section>
+
+            <section>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.12em] text-[#536670]">
+                  <CheckSquare className="h-4 w-4" />
+                  Checklist
+                </h3>
+                <span className="text-sm font-bold text-[#536670]">{checklistProgress}%</span>
+              </div>
+              <div className="mb-3 h-2 overflow-hidden rounded-full bg-[#dfe8ec]">
+                <div className="h-full rounded-full bg-[#0f9f7a]" style={{ width: `${checklistProgress}%` }} />
+              </div>
+              <div className="space-y-2">
+                {task.checklist.map((item) => (
+                  <label key={item.id} className="flex items-center gap-3 rounded-md bg-white p-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={item.done}
+                      onChange={() => onToggleChecklist(item.id)}
+                      className="h-4 w-4 accent-[#0f9f7a]"
+                    />
+                    <span className={item.done ? "text-[#76868f] line-through" : ""}>{item.text}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <input
+                  value={newChecklistText}
+                  onChange={(event) => setNewChecklistText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") onAddChecklist();
+                  }}
+                  placeholder="Adicionar item"
+                  className="min-w-0 flex-1 rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none focus:border-[#2f80ed]"
+                />
+                <button onClick={onAddChecklist} className="rounded-md bg-[#17212b] px-3 py-2 text-sm font-bold text-white">
+                  Adicionar
+                </button>
+              </div>
+            </section>
+
+            <section>
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-black uppercase tracking-[0.12em] text-[#536670]">
+                <MessageSquare className="h-4 w-4" />
+                Notas do card
+              </h3>
+              <textarea
+                value={task.notes}
+                onChange={(event) => onUpdate({ notes: event.target.value })}
+                rows={3}
+                className="w-full resize-none rounded-lg border border-[#ccd7dd] bg-white p-3 text-sm leading-relaxed outline-none focus:border-[#2f80ed]"
+              />
+            </section>
+          </div>
+        </div>
+
+        <aside className="border-l border-[#d8e0e4] bg-white p-5 max-lg:border-l-0 max-lg:border-t">
+          <h3 className="mb-4 text-sm font-black uppercase tracking-[0.12em] text-[#536670]">Campos</h3>
+          <div className="space-y-4">
+            <FieldLabel label="Unidade">
+              <select
+                value={task.unitId}
+                onChange={(event) => {
+                  const nextUnit = event.target.value;
+                  const nextProject = projects.find((item) => item.unitId === nextUnit)?.id ?? task.projectId;
+                  onUpdate({ unitId: nextUnit, projectId: nextProject });
+                }}
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+              >
+                {units
+                  .filter((unitItem) => !unitItem.archived)
+                  .map((unitItem) => (
+                    <option key={unitItem.id} value={unitItem.id}>
+                      {unitItem.name}
+                    </option>
+                  ))}
+              </select>
+            </FieldLabel>
+
+            <FieldLabel label="Projeto">
+              <select
+                value={task.projectId}
+                onChange={(event) => onUpdate({ projectId: event.target.value })}
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+              >
+                {availableProjects.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </FieldLabel>
+
+            <FieldLabel label="Coluna">
+              <select
+                value={task.column}
+                onChange={(event) => onUpdate({ column: event.target.value as ColumnId })}
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+              >
+                {columns.map((column) => (
+                  <option key={column.id} value={column.id}>
+                    {column.label}
+                  </option>
+                ))}
+              </select>
+            </FieldLabel>
+
+            <FieldLabel label="Responsavel">
+              <select
+                value={task.owner}
+                onChange={(event) => {
+                  const member = initialMembers.find((item) => item.name === event.target.value);
+                  onUpdate({ owner: event.target.value, ownerType: member?.type ?? task.ownerType });
+                }}
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+              >
+                {initialMembers.map((member) => (
+                  <option key={member.name} value={member.name}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+            </FieldLabel>
+
+            <FieldLabel label="Data de entrega">
+              <input
+                type="date"
+                value={task.due}
+                onChange={(event) => onUpdate({ due: event.target.value })}
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+              />
+            </FieldLabel>
+
+            <FieldLabel label="Prioridade">
+              <select
+                value={task.priority}
+                onChange={(event) => onUpdate({ priority: event.target.value as Task["priority"] })}
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+              >
+                <option value="Alta">Alta</option>
+                <option value="Media">Media</option>
+                <option value="Baixa">Baixa</option>
+              </select>
+            </FieldLabel>
+
+            <FieldLabel label="Etiquetas">
+              <input
+                value={task.labels.join(", ")}
+                onChange={(event) =>
+                  onUpdate({
+                    labels: event.target.value
+                      .split(",")
+                      .map((label) => label.trim())
+                      .filter(Boolean),
+                  })
+                }
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none"
+              />
+            </FieldLabel>
+          </div>
+
+          <div className="mt-6">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-black uppercase tracking-[0.12em] text-[#536670]">
+              <Paperclip className="h-4 w-4" />
+              Anexos
+            </h3>
+            <div className="space-y-2">
+              {task.attachments.length > 0 ? (
+                task.attachments.map((attachment) => (
+                  <div key={attachment} className="rounded-md bg-[#eef3f5] px-3 py-2 text-sm font-semibold text-[#42515a]">
+                    {attachment}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-[#6b7b85]">Nenhum anexo ainda.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <h3 className="mb-3 text-sm font-black uppercase tracking-[0.12em] text-[#536670]">Atividade</h3>
+            <div className="space-y-2">
+              {task.activity.map((item, index) => (
+                <p key={`${item}-${index}`} className="rounded-md bg-[#f5f8f9] p-2 text-sm text-[#536670]">
+                  {item}
+                </p>
+              ))}
+            </div>
+          </div>
+        </aside>
+      </section>
+    </div>
   );
 }
 
@@ -728,4 +1212,20 @@ function PanelTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
       {title}
     </div>
   );
+}
+
+function FieldLabel({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-black uppercase tracking-[0.12em] text-[#667781]">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function formatDue(value: string) {
+  if (!value) return "Sem data";
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return `${day}/${month}`;
 }
