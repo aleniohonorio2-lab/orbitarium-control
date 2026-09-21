@@ -12,18 +12,21 @@ import {
   CheckSquare,
   Clock3,
   ExternalLink,
+  FolderKanban,
   GripVertical,
   LockKeyhole,
+  LogOut,
   MessageSquare,
   Paperclip,
   Pencil,
   Plus,
   Search,
   Settings,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type ColumnId = "intake" | "planned" | "doing" | "review" | "done";
 
@@ -78,6 +81,15 @@ type Member = {
   type: "Pessoa" | "Agente";
   units: string[];
   status: "Online" | "Focado" | "Aguardando";
+};
+
+type SessionUser = {
+  name: string;
+  email: string;
+};
+
+type StoredUser = SessionUser & {
+  password: string;
 };
 
 declare global {
@@ -285,19 +297,37 @@ const healthClass = {
 };
 
 const makeId = (prefix = "task") => `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+const storageKeys = {
+  units: "orbitarium.units",
+  projects: "orbitarium.projects",
+  tasks: "orbitarium.tasks",
+  users: "orbitarium.users",
+  session: "orbitarium.session",
+};
 
 export default function Home() {
   const [units, setUnits] = useState(initialUnits);
-  const [projects] = useState(initialProjects);
+  const [projects, setProjects] = useState(initialProjects);
   const [tasks, setTasks] = useState(initialTasks);
+  const [session, setSession] = useState<SessionUser | null>(null);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("admin@orbitarium.local");
+  const [authPassword, setAuthPassword] = useState("admin");
+  const [authError, setAuthError] = useState("");
+  const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
   const [selectedUnitId, setSelectedUnitId] = useState("all");
   const [selectedProjectId, setSelectedProjectId] = useState("all");
   const [query, setQuery] = useState("");
   const [newUnitName, setNewUnitName] = useState("");
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectUnit, setNewProjectUnit] = useState("scaletec");
+  const [newProjectSignal, setNewProjectSignal] = useState("Operacao");
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskUnit, setNewTaskUnit] = useState("scaletec");
   const [newTaskProject, setNewTaskProject] = useState("agent-stack");
   const [newTaskOwner, setNewTaskOwner] = useState("Codex Ops");
+  const [taskFormMessage, setTaskFormMessage] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [newChecklistText, setNewChecklistText] = useState("");
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -306,6 +336,43 @@ export default function Home() {
   useEffect(() => {
     snapshotRef.current = { units, projects, tasks };
   }, [units, projects, tasks]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedUsers = readStorage<StoredUser[]>(storageKeys.users, []);
+    if (storedUsers.length === 0) {
+      writeStorage(storageKeys.users, [
+        { name: "Admin Orbitarium", email: "admin@orbitarium.local", password: "admin" },
+      ]);
+    }
+    queueMicrotask(() => {
+      setUnits(readStorage<Unit[]>(storageKeys.units, initialUnits));
+      setProjects(readStorage<Project[]>(storageKeys.projects, initialProjects));
+      setTasks(readStorage<Task[]>(storageKeys.tasks, initialTasks));
+      setSession(readStorage<SessionUser | null>(storageKeys.session, null));
+      setHasLoadedStorage(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedStorage) return;
+    writeStorage(storageKeys.units, units);
+  }, [hasLoadedStorage, units]);
+
+  useEffect(() => {
+    if (!hasLoadedStorage) return;
+    writeStorage(storageKeys.projects, projects);
+  }, [hasLoadedStorage, projects]);
+
+  useEffect(() => {
+    if (!hasLoadedStorage) return;
+    writeStorage(storageKeys.tasks, tasks);
+  }, [hasLoadedStorage, tasks]);
+
+  useEffect(() => {
+    if (!hasLoadedStorage) return;
+    writeStorage(storageKeys.session, session);
+  }, [hasLoadedStorage, session]);
 
   const visibleUnits = units.filter((unit) => !unit.archived);
   const visibleTasks = tasks.filter((task) => {
@@ -332,9 +399,53 @@ export default function Home() {
 
   useEffect(() => {
     if (!availableProjects.some((project) => project.id === newTaskProject)) {
-      setNewTaskProject(availableProjects[0]?.id ?? "growth-lab");
+      queueMicrotask(() => setNewTaskProject(availableProjects[0]?.id ?? ""));
     }
   }, [availableProjects, newTaskProject]);
+
+  useEffect(() => {
+    if (!visibleUnits.some((unit) => unit.id === newProjectUnit)) {
+      queueMicrotask(() => setNewProjectUnit(visibleUnits[0]?.id ?? "scaletec"));
+    }
+  }, [newProjectUnit, visibleUnits]);
+
+  function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthError("");
+    const email = authEmail.trim().toLowerCase();
+    const password = authPassword.trim();
+    if (!email || !password) {
+      setAuthError("Preencha e-mail e senha.");
+      return;
+    }
+    const users = readStorage<StoredUser[]>(storageKeys.users, []);
+    if (authMode === "signup") {
+      if (!authName.trim()) {
+        setAuthError("Informe seu nome para criar o acesso.");
+        return;
+      }
+      if (users.some((user) => user.email === email)) {
+        setAuthError("Este e-mail ja esta cadastrado.");
+        return;
+      }
+      const created = { name: authName.trim(), email, password };
+      writeStorage(storageKeys.users, [...users, created]);
+      setSession({ name: created.name, email: created.email });
+      return;
+    }
+    const user = users.find((item) => item.email === email && item.password === password);
+    if (!user) {
+      setAuthError("Login ou senha invalidos.");
+      return;
+    }
+    setSession({ name: user.name, email: user.email });
+  }
+
+  function logout() {
+    setSession(null);
+    setAuthMode("login");
+    setAuthPassword("");
+  }
 
   function updateTask(taskId: string, patch: Partial<Task>) {
     setTasks((current) =>
@@ -370,13 +481,22 @@ export default function Home() {
     options: Partial<Task> = {},
   ) {
     const cleanTitle = title.trim();
-    if (!cleanTitle) return null;
+    if (!cleanTitle) {
+      setTaskFormMessage("Digite um titulo para criar o card.");
+      return null;
+    }
+    const fallbackProject = projects.find((project) => project.unitId === unitId)?.id;
+    const cleanProjectId = projects.some((project) => project.id === projectId) ? projectId : fallbackProject;
+    if (!cleanProjectId) {
+      setTaskFormMessage("Crie um projeto para esta unidade antes de criar o card.");
+      return null;
+    }
     const ownerRecord = initialMembers.find((member) => member.name === owner);
     const task: Task = {
       id: makeId(),
       title: cleanTitle,
       unitId,
-      projectId,
+      projectId: cleanProjectId,
       owner,
       ownerType: ownerRecord?.type ?? "Agente",
       column: "intake",
@@ -398,6 +518,7 @@ export default function Home() {
     };
     setTasks((current) => [task, ...current]);
     setNewTaskTitle("");
+    setTaskFormMessage("Card criado na coluna Entrada.");
     setSelectedTaskId(task.id);
     return task;
   }
@@ -414,7 +535,50 @@ export default function Home() {
       archived: false,
     };
     setUnits((current) => [...current, unit]);
+    setProjects((current) => [
+      ...current,
+      { id: makeId("project"), unitId: unit.id, name: "Primeiro quadro", signal: "Novo" },
+    ]);
     setNewUnitName("");
+  }
+
+  function addProject() {
+    const cleanName = newProjectName.trim();
+    if (!cleanName) return;
+    const project: Project = {
+      id: makeId("project"),
+      unitId: newProjectUnit,
+      name: cleanName,
+      signal: newProjectSignal.trim() || "Operacao",
+    };
+    setProjects((current) => [...current, project]);
+    setNewProjectName("");
+    setNewProjectSignal("Operacao");
+    setNewTaskUnit(project.unitId);
+    setNewTaskProject(project.id);
+    setSelectedUnitId(project.unitId);
+    setSelectedProjectId(project.id);
+  }
+
+  function renameProject(projectId: string) {
+    const current = projects.find((project) => project.id === projectId);
+    if (!current) return;
+    const nextName = window.prompt("Novo nome do projeto", current.name);
+    if (!nextName?.trim()) return;
+    setProjects((items) =>
+      items.map((project) => (project.id === projectId ? { ...project, name: nextName.trim() } : project)),
+    );
+  }
+
+  function archiveProject(projectId: string) {
+    const projectTasks = tasks.filter((task) => task.projectId === projectId);
+    if (projectTasks.length > 0) {
+      window.alert("Este projeto tem cards. Mova ou conclua os cards antes de arquivar.");
+      return;
+    }
+    setProjects((items) => items.filter((project) => project.id !== projectId));
+    if (selectedProjectId === projectId) setSelectedProjectId("all");
+    if (newTaskProject === projectId) setNewTaskProject(projects.find((project) => project.id !== projectId)?.id ?? "");
   }
 
   function renameUnit(unitId: string) {
@@ -583,6 +747,43 @@ export default function Home() {
     void Promise.resolve(
       register(
         {
+          name: "orbitarium_create_project",
+          title: "Criar projeto",
+          description: "Cria um projeto ou quadro dentro de uma unidade de negocio.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              unitId: { type: "string" },
+              name: { type: "string" },
+              signal: { type: "string" },
+            },
+            required: ["unitId", "name"],
+            additionalProperties: false,
+          },
+          annotations: { readOnlyHint: false, untrustedContentHint: false },
+          execute(input) {
+            const payload = input as { unitId?: unknown; name?: unknown; signal?: unknown };
+            if (typeof payload.unitId !== "string" || typeof payload.name !== "string") {
+              throw new Error("Entrada invalida para criar projeto.");
+            }
+            const project: Project = {
+              id: makeId("project"),
+              unitId: payload.unitId,
+              name: payload.name.trim(),
+              signal: typeof payload.signal === "string" ? payload.signal : "Operacao",
+            };
+            if (!project.name) throw new Error("Nome do projeto vazio.");
+            setProjects((current) => [...current, project]);
+            return { created: project };
+          },
+        },
+        { signal: lifecycle.signal },
+      ),
+    ).catch(() => undefined);
+
+    void Promise.resolve(
+      register(
+        {
           name: "orbitarium_move_task",
           title: "Mover tarefa",
           description: "Move uma tarefa existente para uma coluna especifica do Kanban.",
@@ -665,7 +866,27 @@ export default function Home() {
     ).catch(() => undefined);
 
     return () => lifecycle.abort();
-  }, [availableProjects, draggedTaskId, newTaskProject, newTaskTitle, newTaskUnit, newTaskOwner, tasks]);
+  }, [availableProjects, draggedTaskId, newTaskProject, newTaskTitle, newTaskUnit, newTaskOwner, tasks, projects]);
+
+  if (!session) {
+    return (
+      <LoginScreen
+        mode={authMode}
+        name={authName}
+        email={authEmail}
+        password={authPassword}
+        error={authError}
+        onModeChange={(mode) => {
+          setAuthMode(mode);
+          setAuthError("");
+        }}
+        onNameChange={setAuthName}
+        onEmailChange={setAuthEmail}
+        onPasswordChange={setAuthPassword}
+        onSubmit={handleAuthSubmit}
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#eef2f4] text-[#17212b]">
@@ -678,6 +899,23 @@ export default function Home() {
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#5b6b75]">Mission Control</p>
               <h1 className="text-2xl font-black tracking-tight">Orbitarium</h1>
+            </div>
+          </div>
+
+          <div className="mb-5 rounded-lg border border-[#d8e0e4] bg-white p-3">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#60717c]">Sessao</p>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black">{session.name}</p>
+                <p className="truncate text-xs text-[#687982]">{session.email}</p>
+              </div>
+              <button
+                onClick={logout}
+                aria-label="Sair"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-[#d8e0e4] text-[#52636d]"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
             </div>
           </div>
 
@@ -762,6 +1000,75 @@ export default function Home() {
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-lg border border-[#d8e0e4] bg-white p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-bold">Projetos e quadros</h2>
+              <FolderKanban className="h-4 w-4 text-[#60717c]" />
+            </div>
+            <div className="grid gap-2">
+              <input
+                value={newProjectName}
+                onChange={(event) => setNewProjectName(event.target.value)}
+                placeholder="Novo projeto"
+                className="rounded-md border border-[#ccd7dd] px-3 py-2 text-sm outline-none focus:border-[#2f80ed]"
+              />
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <select
+                  value={newProjectUnit}
+                  onChange={(event) => setNewProjectUnit(event.target.value)}
+                  className="min-w-0 rounded-md border border-[#ccd7dd] px-3 py-2 text-sm outline-none"
+                >
+                  {visibleUnits.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={addProject}
+                  aria-label="Criar projeto"
+                  className="grid h-9 w-9 place-items-center rounded-md bg-[#17212b] text-white"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+              <input
+                value={newProjectSignal}
+                onChange={(event) => setNewProjectSignal(event.target.value)}
+                placeholder="Sinal: Operacao, Receita..."
+                className="rounded-md border border-[#ccd7dd] px-3 py-2 text-sm outline-none focus:border-[#2f80ed]"
+              />
+            </div>
+            <div className="mt-3 space-y-2">
+              {projects.map((project) => {
+                const unit = units.find((item) => item.id === project.unitId);
+                return (
+                  <div key={project.id} className="flex items-center gap-2 rounded-md bg-[#f5f8f9] px-2 py-2 text-sm">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: unit?.color ?? "#60717c" }}
+                    />
+                    <button
+                      onClick={() => {
+                        setSelectedUnitId(project.unitId);
+                        setSelectedProjectId(project.id);
+                      }}
+                      className="min-w-0 flex-1 truncate text-left font-semibold"
+                    >
+                      {project.name}
+                    </button>
+                    <button onClick={() => renameProject(project.id)} aria-label={`Renomear ${project.name}`} className="p-1">
+                      <Pencil className="h-3.5 w-3.5 text-[#657781]" />
+                    </button>
+                    <button onClick={() => archiveProject(project.id)} aria-label={`Arquivar ${project.name}`} className="p-1">
+                      <Archive className="h-3.5 w-3.5 text-[#657781]" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </aside>
@@ -851,6 +1158,7 @@ export default function Home() {
                 Criar
               </button>
             </div>
+            {taskFormMessage && <p className="mt-2 text-sm font-semibold text-[#536670]">{taskFormMessage}</p>}
           </div>
 
           <div className="grid gap-3 overflow-x-auto pb-3 xl:grid-cols-5">
@@ -1018,11 +1326,12 @@ export default function Home() {
               Agentes podem ler o quadro, criar tarefas, mover cards e atualizar detalhes por ferramentas WebMCP.
             </p>
             <div className="mt-4 space-y-2 font-mono text-xs text-[#24313a]">
-              <code className="block rounded bg-[#eef3f5] p-2">orbitarium_read_board</code>
-              <code className="block rounded bg-[#eef3f5] p-2">orbitarium_create_task</code>
-              <code className="block rounded bg-[#eef3f5] p-2">orbitarium_move_task</code>
-              <code className="block rounded bg-[#eef3f5] p-2">orbitarium_update_task</code>
-            </div>
+                  <code className="block rounded bg-[#eef3f5] p-2">orbitarium_read_board</code>
+                  <code className="block rounded bg-[#eef3f5] p-2">orbitarium_create_task</code>
+                  <code className="block rounded bg-[#eef3f5] p-2">orbitarium_create_project</code>
+                  <code className="block rounded bg-[#eef3f5] p-2">orbitarium_move_task</code>
+                  <code className="block rounded bg-[#eef3f5] p-2">orbitarium_update_task</code>
+                </div>
           </div>
         </aside>
       </div>
@@ -1041,6 +1350,135 @@ export default function Home() {
           checklistProgress={checklistProgress(selectedTask)}
         />
       )}
+    </main>
+  );
+}
+
+function LoginScreen({
+  mode,
+  name,
+  email,
+  password,
+  error,
+  onModeChange,
+  onNameChange,
+  onEmailChange,
+  onPasswordChange,
+  onSubmit,
+}: {
+  mode: "login" | "signup";
+  name: string;
+  email: string;
+  password: string;
+  error: string;
+  onModeChange: (mode: "login" | "signup") => void;
+  onNameChange: (value: string) => void;
+  onEmailChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <main className="grid min-h-screen bg-[#eef2f4] px-4 py-8 text-[#17212b]">
+      <section className="mx-auto grid w-full max-w-5xl grid-cols-[1.1fr_420px] overflow-hidden rounded-lg border border-[#cdd8de] bg-white shadow-xl max-lg:grid-cols-1">
+        <div className="flex min-h-[620px] flex-col justify-between bg-[#17212b] p-8 text-white">
+          <div>
+            <div className="mb-8 grid h-12 w-12 place-items-center rounded-lg bg-white text-sm font-black text-[#17212b]">
+              OC
+            </div>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#9fb0ba]">Orbitarium Control</p>
+            <h1 className="mt-3 max-w-xl text-5xl font-black leading-tight tracking-tight max-sm:text-4xl">
+              Seu ambiente de comando para pessoas, agentes e unidades.
+            </h1>
+            <p className="mt-5 max-w-lg text-base leading-relaxed text-[#cbd6dc]">
+              Entre para visualizar tarefas, criar projetos, organizar cards e acionar o Codex pelo proprio quadro.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-sm max-sm:grid-cols-1">
+            <div className="rounded-lg bg-white/10 p-3">
+              <p className="font-black">Kanban</p>
+              <p className="mt-1 text-[#cbd6dc]">Cards, colunas e detalhe completo.</p>
+            </div>
+            <div className="rounded-lg bg-white/10 p-3">
+              <p className="font-black">Projetos</p>
+              <p className="mt-1 text-[#cbd6dc]">Quadros por unidade de negocio.</p>
+            </div>
+            <div className="rounded-lg bg-white/10 p-3">
+              <p className="font-black">Agentes</p>
+              <p className="mt-1 text-[#cbd6dc]">Ferramentas WebMCP nativas.</p>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={onSubmit} className="flex flex-col justify-center p-8">
+          <div className="mb-6 flex rounded-lg bg-[#eef3f5] p-1">
+            <button
+              type="button"
+              onClick={() => onModeChange("login")}
+              className={`flex-1 rounded-md px-3 py-2 text-sm font-black ${
+                mode === "login" ? "bg-white text-[#17212b] shadow-sm" : "text-[#60717c]"
+              }`}
+            >
+              Entrar
+            </button>
+            <button
+              type="button"
+              onClick={() => onModeChange("signup")}
+              className={`flex-1 rounded-md px-3 py-2 text-sm font-black ${
+                mode === "signup" ? "bg-white text-[#17212b] shadow-sm" : "text-[#60717c]"
+              }`}
+            >
+              Criar acesso
+            </button>
+          </div>
+
+          <div className="mb-6">
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#60717c]">
+              {mode === "login" ? "Login" : "Cadastro"}
+            </p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight">
+              {mode === "login" ? "Acessar ambiente" : "Cadastrar usuario"}
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-[#60717c]">
+              Acesso inicial: admin@orbitarium.local / admin. Os cadastros ficam salvos neste navegador.
+            </p>
+          </div>
+
+          <div className="grid gap-4">
+            {mode === "signup" && (
+              <FieldLabel label="Nome">
+                <input
+                  value={name}
+                  onChange={(event) => onNameChange(event.target.value)}
+                  className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none focus:border-[#2f80ed]"
+                />
+              </FieldLabel>
+            )}
+            <FieldLabel label="E-mail">
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => onEmailChange(event.target.value)}
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none focus:border-[#2f80ed]"
+              />
+            </FieldLabel>
+            <FieldLabel label="Senha">
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => onPasswordChange(event.target.value)}
+                className="w-full rounded-md border border-[#ccd7dd] bg-white px-3 py-2 text-sm outline-none focus:border-[#2f80ed]"
+              />
+            </FieldLabel>
+          </div>
+
+          {error && <p className="mt-4 rounded-md bg-[#fff0ed] px-3 py-2 text-sm font-bold text-[#aa3329]">{error}</p>}
+
+          <button className="mt-6 inline-flex items-center justify-center gap-2 rounded-md bg-[#17212b] px-4 py-3 text-sm font-black text-white">
+            {mode === "login" ? <LockKeyhole className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+            {mode === "login" ? "Entrar no Mission Control" : "Criar cadastro"}
+          </button>
+        </form>
+      </section>
     </main>
   );
 }
@@ -1421,6 +1859,21 @@ function FieldLabel({ label, children }: { label: string; children: React.ReactN
       {children}
     </label>
   );
+}
+
+function readStorage<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStorage<T>(key: string, value: T) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(key, JSON.stringify(value));
 }
 
 function buildGoogleCalendarUrl(task: Task, unit?: Unit, project?: Project) {
